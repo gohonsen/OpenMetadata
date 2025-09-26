@@ -577,6 +577,7 @@ export enum DatabaseServiceType {
     DynamoDB = "DynamoDB",
     Epic = "Epic",
     Exasol = "Exasol",
+    FlinkSqlGateway = "FlinkSqlGateway",
     Glue = "Glue",
     Greenplum = "Greenplum",
     Hive = "Hive",

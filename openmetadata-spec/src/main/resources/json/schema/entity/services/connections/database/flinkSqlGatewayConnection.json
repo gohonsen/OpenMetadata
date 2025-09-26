@@ -28,22 +28,22 @@
         "default": "FlinkSqlGateway"
       },
       "hostPort": {
-        "expose": true,
         "title": "Host And Port",
-        "description": "Flink Sql Gateway Rest URI",
+        "description": "Flink Sql Gateway URI",
         "type": "string",
         "format": "uri",
         "default": "127.0.0.1:8083"
       },
-       "catalog": {
+      "catalog": {
         "title": "Catalog Name",
         "description": "Catalogs provide metadata, such as databases, tables, partitions, views, and functions and information needed to access data stored in a database or other external systems.",
+        "type": "string",
         "default": "default_catalog"
       },
       "database": {
         "title": "Database Name",
-        "description": "Catalogs provide metadata, such as databases, tables, partitions, views, and functions and information needed to access data stored in a database or other external systems.",
-        "default": "ods"
+        "description": "Database of the data source. This is optional parameter, if you would like to restrict the metadata reading to a single database. When left blank, OpenMetadata Ingestion attempts to scan all the databases.",
+        "type": "string"
       },
       "tableFilterPattern": {
         "title": "Default Table Filter Pattern",

@@ -52,6 +52,7 @@ import {
   EXASOL,
   FIVETRAN,
   FLINK,
+  FLINK_SQL_GATEWAY,
   GCS,
   GLUE,
   GRAFANA,
@@ -654,6 +655,9 @@ class ServiceUtilClassBase {
 
       case this.DashboardServiceTypeSmallCase.Grafana:
         return GRAFANA;
+
+      case this.DatabaseServiceTypeSmallCase.FlinkSqlGateway:
+        return FLINK_SQL_GATEWAY;
 
       default: {
         let logo;

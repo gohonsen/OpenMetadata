@@ -38,6 +38,7 @@ import dynamodb from '../assets/img/service-icon-dynamodb.png';
 import exasol from '../assets/img/service-icon-exasol.png';
 import fivetran from '../assets/img/service-icon-fivetran.png';
 import flink from '../assets/img/service-icon-flink.png';
+import flinkSqlGateway from '../assets/img/service-icon-flinksqlgateway.png';
 import gcs from '../assets/img/service-icon-gcs.png';
 import glue from '../assets/img/service-icon-glue.png';
 import grafana from '../assets/img/service-icon-grafana.png';
@@ -214,6 +215,7 @@ export const REST_SERVICE = restService;
 export const COCKROACH = cockroach;
 export const SECURITY_DEFAULT = securitySafe;
 export const GRAFANA = grafana;
+export const FLINK_SQL_GATEWAY = flinkSqlGateway;
 export const excludedService = [
   MlModelServiceType.Sklearn,
   MetadataServiceType.MetadataES,
@@ -450,6 +452,7 @@ export const BETA_SERVICES = [
   DatabaseServiceType.Epic,
   DashboardServiceType.Grafana,
   DatabaseServiceType.ServiceNow,
+  DatabaseServiceType.FlinkSqlGateway,
 ];
 
 export const TEST_CONNECTION_INITIAL_MESSAGE = i18n.t(
@@ -545,4 +548,5 @@ export const SERVICE_TYPE_WITH_DISPLAY_NAME = new Map<string, string>([
   [PipelineServiceType.OpenLineage, 'Open Lineage'],
   [MetadataServiceType.AlationSink, 'Alation Sink'],
   [SearchServiceType.ElasticSearch, 'Elasticsearch'],
+  [DatabaseServiceType.FlinkSqlGateway, 'Flink SQL Gateway'],
 ]);

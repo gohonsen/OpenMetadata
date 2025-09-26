@@ -18,18 +18,19 @@ export interface FlinkSQLGatewayConnection {
      * Catalogs provide metadata, such as databases, tables, partitions, views, and functions
      * and information needed to access data stored in a database or other external systems.
      */
-    catalog: any;
+    catalog: string;
     /**
-     * Catalogs provide metadata, such as databases, tables, partitions, views, and functions
-     * and information needed to access data stored in a database or other external systems.
+     * Database of the data source. This is optional parameter, if you would like to restrict
+     * the metadata reading to a single database. When left blank, OpenMetadata Ingestion
+     * attempts to scan all the databases.
      */
-    database?: any;
+    database?: string;
     /**
      * Regex to only include/exclude databases that matches the pattern.
      */
     databaseFilterPattern?: FilterPattern;
     /**
-     * Flink Sql Gateway Rest URI
+     * Flink Sql Gateway URI
      */
     hostPort:                    string;
     sampleDataStorageConfig?:    SampleDataStorageConfig;
