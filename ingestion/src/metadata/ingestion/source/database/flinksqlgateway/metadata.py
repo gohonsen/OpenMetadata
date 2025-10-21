@@ -13,175 +13,322 @@
 Flink SQL Gateway source implementation.
 Useful for testing!
 """
-import requests
-import time
-
 import traceback
-from typing import Optional, Tuple
-
-from metadata.generated.schema.entity.services.connections.database.flinkSqlGatewayConnection import (
-    FlinkSqlGatewayConnection,
-)
+from typing import Iterable, Optional, Tuple, List, cast
+from sqlalchemy.engine.reflection import Inspector
+from metadata.ingestion.api.models import Either
+from metadata.ingestion.ometa.ometa_api import OpenMetadata
+from metadata.ingestion.api.steps import InvalidSourceException
 from metadata.generated.schema.metadataIngestion.workflow import (
     Source as WorkflowSource,
 )
-from metadata.ingestion.source.database.common_db_source import CommonDbSourceService
+from metadata.generated.schema.type.basic import (
+    EntityName,
+    FullyQualifiedEntityName,
+    Markdown,
+)
+from metadata.generated.schema.api.data.createDatabase import CreateDatabaseRequest
+from metadata.generated.schema.api.data.createTable import CreateTableRequest
+from metadata.generated.schema.entity.services.ingestionPipelines.status import (
+    StackTraceError,
+)
+from metadata.ingestion.source.database.flinksqlgateway.connection import get_connection, test_connection
+from metadata.generated.schema.entity.services.connections.database.flinkSqlGatewayConnection import (
+    FlinkSqlGatewayConnection,
+)
+from metadata.ingestion.source.database.common_db_source import (
+    CommonDbSourceService,
+    TableNameAndType
+)
+from metadata.generated.schema.entity.data.databaseSchema import DatabaseSchema
+from metadata.generated.schema.entity.data.table import (
+    Column,
+    ConstraintType,
+    Table,
+    TableConstraint,
+    TablePartition,
+    TableType,
+)
+from metadata.ingestion.source.database.database_service import DatabaseServiceSource
+from metadata.utils import fqn
+from metadata.utils.filters import filter_by_database, filter_by_schema, filter_by_table
 from metadata.utils.logger import ingestion_logger
-
+from metadata.utils.execution_time_tracker import (
+    calculate_execution_time,
+    calculate_execution_time_generator,
+)
 logger = ingestion_logger()
 
+
 class FlinkSqlGatewaySource(CommonDbSourceService):
-    def __init__(self, config, metadata_config):
-        super().__init__(config, metadata_config)
-        self.connection: FlinkSqlGatewayConnection = config.connection
-        self.connect_url = f'{config.connection.hostPort}/v1/sessions'
-        self.catalog_name = config.connection.catalog
-        self.database_name = config.connection.database
-        self.session_handle = None
+    # @retry_with_docker_host()
+    # def __init__(self, config: WorkflowSource, metadata: OpenMetadata):
+    #     # self.test_connection = lambda: None
+    #     self.ssl_manager = None
+    #     self.client = None
+    #     self.session = None
+    #
+    #     self.config = config
+    #     self.source_config: DatabaseServiceMetadataPipeline = (
+    #         self.config.sourceConfig.config
+    #     )
+    #     # It will be one of the Unions. We don't know the specific type here.
+    #     self.service_connection = self.config.serviceConnection.root.config
+    #     self.engine = get_connection(self.service_connection)
+    #     self.connection_obj = self.engine
+    #     self.metadata = metadata
+    #
+    #     self._connection_map = {}  # Lazy init as well
+    #     # self._inspector_map = {}
+    #     # self.table_constraints = None
+    #     # self.database_source_state = set()
+    #     # self.context.get_global().table_constrains = []
+    #     # self.context.get_global().foreign_tables = []
+    #     # self.context.set_threads(self.source_config.threads)
+    #
+    #     # Flag the connection for the test connection
+    #     self.test_connection = self._test_connection
+    #     self.test_connection()
+    #
+    #     # Flag the connection for the test connection
+    #     # self.connection: FlinkSqlGatewayConnection = config.connection
+    #     self.connect_url = f"{self.service_connection.hostPort}v1/sessions"
+    #     self.catalog_name = self.service_connection.catalog
+    #     self.database_name = self.service_connection.database
+    #     self.session_handle = None
+    #     logger.info(f"Flink Sql Gateway init: {self.connect_url}/{self.catalog_name}")
 
-    def create_session(self) -> bool:
+    def _test_connection(self) -> None:
+        logger.info("call test connection")
+        test_connection(self.metadata, self.engine, self.service_connection)
+
+    # @property
+    # def connection(self) -> Connection:
+    #     """
+    #     Return the SQLAlchemy connection
+    #     """
+    #     thread_id = self.context.get_current_thread_id()
+    #     if not self._connection_map.get(thread_id):
+    #         self._connection_map[thread_id] = self.engine.connect()
+    #     return self._connection_map[thread_id]
+
+    @classmethod
+    def create(
+            cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
+    ):
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        # connection = config.serviceConnection.root.config
+        connection = cast(FlinkSqlGatewayConnection, config.serviceConnection.root.config)
+        if not isinstance(connection, FlinkSqlGatewayConnection):
+            raise InvalidSourceException(
+                f"Expected FlinkSqlGatewayConnection, but got {connection}"
+            )
+        return cls(config, metadata)
+
+    def get_database_names(self) -> Iterable[str]:
+        """
+        Default case with a single database.
+
+        It might come informed - or not - from the source.
+
+        Sources with multiple databases should overwrite this and
+        apply the necessary filters.
+        """
+        custom_database_name = self.service_connection.__dict__.get("databaseName")
+        database_name = self.service_connection.__dict__.get(
+            "database", custom_database_name or "default"
+        )
+        logger.info(f"Flink Sql Gateway get database name:{database_name}")
+
+        yield database_name
+
+    @calculate_execution_time_generator()
+    def yield_database(
+            self, database_name: str
+    ) -> Iterable[Either[CreateDatabaseRequest]]:
+        """
+        From topology.
+        Prepare a database request and pass it to the sink
+        """
+
+        description = None
+        source_url = None
+        database_request = CreateDatabaseRequest(
+            name=EntityName(database_name),
+            service=FullyQualifiedEntityName(self.context.get().database_service),
+            description=description,
+            sourceUrl=source_url,
+            tags=self.get_database_tag_labels(database_name=database_name),
+        )
+
+        yield Either(right=database_request)
+        self.register_record_database_request(database_request=database_request)
+
+    @staticmethod
+    @calculate_execution_time()
+    def get_table_description(
+            schema_name: str, table_name: str, inspector: Inspector
+    ) -> str:
+        description = None
         try:
-            response = requests.post(self.connect_url)
-            response.raise_for_status()
-            self.session_handle = response.json()["sessionHandle"]
-            logger.info(f"Flink Sql Gateway Session created: {self.session_handle}")
-            use_catalog_handle = self.execute_statement(f"USE CATALOG {self.catalog_name}")
-            if not use_catalog_handle:
-                return False
-            return True
-        except Exception as e:
-            logger.error(f"Failed to create flink sql gateway session: {e}")
-            return False
+            table_info: dict = inspector.get_table_comment(table_name, schema_name)
+            logger.info(f"Table info: {type(table_info)}  {table_info}")
+        # Catch any exception without breaking the ingestion
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.debug(traceback.format_exc())
+            logger.warning(
+                f"Table description error for table [{schema_name}.{table_name}]: {exc}"
+            )
+        else:
+            description = table_info.get("text")
+        return description
 
-    def execute_statement(self, statement) -> str:
-        """execute sql"""
-        if not self.session_handle:
-            logger.error("No active session. Please create a session first.")
-            return None
+    # def query_table_names_and_types(
+    #         self, schema_name: str
+    # ) -> Iterable[TableNameAndType]:
+    #     return [
+    #         TableNameAndType(name=table_name)
+    #         for table_name in self.inspector.get_table_names(schema_name) or []
+    #     ]
 
-        url = f"{self.connect_url}/{self.session_handle}/statements"
+    def get_tables_name_and_type(self) -> Optional[Iterable[Tuple[str, str]]]:
+        """
+        Handle table and views.
+
+        Fetches them up using the context information and
+        the inspector set when preparing the db.
+
+        :return: tables or views, depending on config
+        """
+        schema_name = self.context.get().database_schema
         try:
-            data = {"statement": statement}
-            response = requests.post(url, json=data)
-            response.raise_for_status()
-            operation_handle = response.json()["operationHandle"]
-            logger.info(f"Statement executed, operation handle: {operation_handle}")
-            return operation_handle
-        except Exception as e:
-            logger.error(f"Failed to execute statement: {e}")
-            return None
+            if self.source_config.includeTables:
+                for table_and_type in self.query_table_names_and_types(schema_name):
+                    table_name = self.standardize_table_name(
+                        schema_name, table_and_type.name
+                    )
+                    table_fqn = fqn.build(
+                        self.metadata,
+                        entity_type=Table,
+                        service_name=self.context.get().database_service,
+                        database_name=self.context.get().database,
+                        schema_name=self.context.get().database_schema,
+                        table_name=table_name,
+                        skip_es_search=True,
+                    )
+                    if filter_by_table(
+                            self.source_config.tableFilterPattern,
+                            (
+                                    table_fqn
+                                    if self.source_config.useFqnForFiltering
+                                    else table_name
+                            ),
+                    ):
+                        self.status.filter(
+                            table_fqn,
+                            "Table Filtered Out",
+                        )
+                        continue
+                    yield table_name, table_and_type.type_
+        except Exception as err:
+            logger.warning(
+                f"Fetching tables names failed for schema {schema_name} due to - {err}"
+            )
+            logger.debug(traceback.format_exc())
 
-    def wait_for_result(self, operation_handle, max_retries=30, retry_interval=1):
-        """Wait for the operation to complete and obtain the result"""
-        result_url = f"{self.connect_url}/{self.session_handle}/operations/{operation_handle}/result/0"
-        for attempt in range(1, max_retries + 1):
-            try:
-                response = requests.get(result_url)
-                response.raise_for_status()
-                result_data = response.json()
-
-                result_type = result_data.get("resultType")
-                if result_type == "NOT_READY":
-                    logger.info(f"Attempt {attempt}/{max_retries}: Result not ready, retrying...")
-                    time.sleep(retry_interval)
-                    continue
-                elif result_type in ["PAYLOAD", "EOS"]:
-                    return result_data
-                else:
-                    logger.error(f"Unexpected resultType: {result_type}")
-                    return None
-            except Exception as e:
-                logger.error(f"Request failed on attempt {attempt}: {e}")
-                return None
-
-        logger.error(f"Timeout after {max_retries} attempts")
-        return None
-
-    def close_session(self):
-        """close session"""
-        if not self.session_handle:
-            return
-        url = f"{self.connect_url}/{self.session_handle}"
+    @calculate_execution_time_generator()
+    def yield_table(
+            self, table_name_and_type: Tuple[str, TableType]
+    ) -> Iterable[Either[CreateTableRequest]]:
+        """
+        From topology.
+        Prepare a table request and pass it to the sink
+        """
+        table_name, table_type = table_name_and_type
+        schema_name = self.context.get().database_schema
         try:
-            response = requests.delete(url)
-            response.raise_for_status()
-            logger.info(f"Session {self.session_handle} closed")
-        except Exception as e:
-            logger.error(f"Warning: close session {self.session_handle} failed: {e}")
+            (
+                columns,
+                table_constraints,
+                foreign_columns,
+            ) = self.get_columns_and_constraints(
+                schema_name=schema_name,
+                table_type=table_type,
+                table_name=table_name,
+                db_name=self.context.get().database,
+                inspector=self.inspector,
+            )
 
-    def get_database(self, database_name=None) -> list:
-        """get database list in catalog"""
-        if database_name:
-            return [database_name]
+            schema_definition = self.get_schema_definition(
+                table_type=table_type,
+                table_name=table_name,
+                schema_name=schema_name,
+                inspector=self.inspector,
+            )
 
-        show_database_handle = self.execute_statement("SHOW DATABASES")
-        if not show_database_handle:
-            return None
+            table_constraints = self.update_table_constraints(
+                schema_name=schema_name,
+                table_name=table_name,
+                db_name=self.context.get().database,
+                table_constraints=table_constraints,
+                foreign_columns=foreign_columns,
+                columns=columns,
+            )
 
-        result = self.wait_for_result(show_database_handle)
-        if not result:
-            return None
-        if "results" in result and "data" in result["results"]:
-            data_list = [database_entry["fields"][0] for database_entry in result["results"]["data"]]
-            return data_list
-        return None
-
-    def get_tables(self, database_name) -> list:
-        """get tables list in catalog and database"""
-        # use_catalog_handle = self.execute_statement(f"USE CATALOG {catalog_name}")
-        # if not use_catalog_handle:
-        #     return None
-        # time.sleep(1)
-        use_db_handle = self.execute_statement(f"USE {database_name}")
-        if not use_db_handle:
-            return None
-        time.sleep(1)
-
-        show_tables_handle = self.execute_statement("SHOW TABLES")
-        if not show_tables_handle:
-            return None
-        result = self.wait_for_result(show_tables_handle)
-        if not result:
-            return None
-        if "results" in result and "data" in result["results"]:
-            table_list = [table_entry["fields"][0] for table_entry in result["results"]["data"]]
-            return table_list
-        return None
-
-    def get_table_columns(self, database_name, table_name) -> list:
-        """get table columns"""
-        use_db_handle = self.execute_statement(f"USE {database_name}")
-        if not use_db_handle:
-            return None
-        time.sleep(1)
-
-        describe_table_handle = self.execute_statement(f"DESCRIBE {table_name}")
-        if not describe_table_handle:
-            return None
-        result = self.wait_for_result(describe_table_handle)
-        if not result:
-            return None
-
-        columns = []
-        if "results" in result and "columns" in result["results"]:
-            for column_entry in result["results"]["data"]:
-                column_name = column_entry["fields"][0]
-                column_type = column_entry["fields"][1]
-                column_nullable = column_entry["fields"][2]
-                column_key = column_entry["fields"][3]
-                column_comment = column_entry["fields"][6]
-                columns.append(
-                    {
-                        "name": column_name,
-                        "type": column_type,
-                        "comment": column_comment,
-                        "nullable": column_nullable,
-                    }
+            description = (
+                Markdown(db_description)
+                if (
+                    db_description := self.get_table_description(
+                        schema_name=schema_name,
+                        table_name=table_name,
+                        inspector=self.inspector,
+                    )
                 )
-        return columns
+                else None
+            )
 
-    def get_table_comment(self, connection, table_name, schema_name, **kw):
-        """
-        Returns comment of table.
-        """
-        return {"text": None}
+            table_request = CreateTableRequest(
+                name=EntityName(table_name),
+                tableType=table_type,
+                description=description,
+                columns=columns,
+                tableConstraints=table_constraints,
+                schemaDefinition=schema_definition,
+                databaseSchema=FullyQualifiedEntityName(
+                    fqn.build(
+                        metadata=self.metadata,
+                        entity_type=DatabaseSchema,
+                        service_name=self.context.get().database_service,
+                        database_name=self.context.get().database,
+                        schema_name=schema_name,
+                    )
+                ),
+                tags=self.get_tag_labels(
+                    table_name=table_name
+                ),  # Pick tags from context info, if any
+                # sourceUrl=self.get_source_url(
+                #     table_name=table_name,
+                #     schema_name=schema_name,
+                #     database_name=self.context.get().database,
+                #     table_type=table_type,
+                # ),
+                sourceUrl = None,
+                owners=self.get_owner_ref(table_name=table_name),
+                locationPath=self.get_location_path(
+                    table_name=table_name, schema_name=schema_name
+                ),
+            )
+
+            yield Either(right=table_request)
+            # Register the request that we'll handle during the deletion checks
+            self.register_record(table_request=table_request)
+        except Exception as exc:
+            error = (
+                f"Unexpected exception to yield table "
+                f"(database=[{self.context.get().database}], schema=[{schema_name}], table=[{table_name}]): {exc}"
+            )
+            yield Either(
+                left=StackTraceError(
+                    name=table_name, error=error, stackTrace=traceback.format_exc()
+                )
+            )

@@ -43,6 +43,7 @@ args = f"--input {directory_root}openmetadata-spec/src/main/resources/json/schem
 main(args)
 
 for file_path in UNICODE_REGEX_REPLACEMENT_FILE_PATHS:
+    print('-------file_path:',file_path)
     with open(file_path, "r", encoding=UTF_8) as file_:
         content = file_.read()
         # Python now requires to move the global flags at the very start of the expression

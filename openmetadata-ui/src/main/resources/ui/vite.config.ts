@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
   const devServerTarget =
     env.VITE_DEV_SERVER_TARGET ||
     env.DEV_SERVER_TARGET ||
-    'http://localhost:8585/';
+    'http://172.28.0.173:18585/';
 
   // Dynamically set base path from environment variable or use '/' as default
   const basePath = env.BASE_PATH || '/';

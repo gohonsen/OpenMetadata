@@ -10,16 +10,22 @@ The ingestion framework uses flink APIs to connect to the flink sql gateway inst
 ## Connection Details
 $$section
 ### Host and Port $(id="hostPort")
-Flink Sql Gateway Service URI. This should be specified as a URI string in the format `scheme://hostname:port`. E.g., `http://localhost:8083`, `http://host.docker.internal:8083`.
+This parameter specifies the host and port of the Flink Sql Gateway Service. This should be specified as a string in the format `host:port`. For example, you might set the hostPort parameter to `127.0.0.1:8083`.
 $$
 
 $$section
-### Flink Catalog Name $(id="catalog")
-
+### Flink Catalog Name $(id="catalogName")
+This parameter specifies a catalog name of the Flink.
+Flink catalogs provide metadata, such as databases, tables, partitions, views, and functions and information needed to access data stored in a database or other external systems.
+This should be specified as a string in the format `hive_catalog`.
 $$
 
 
 $$section
-### database name $(id="database")
-`Optional`.
+### Flink Database Name $(id="databaseName")
+In OpenMetadata, the Database Service hierarchy works as follows:
+```
+Database Service > Database > Schema > Table
+```
+In the case of Flink Sql Gateway, we won't have a Schema as such. If you'd like to see your data in a database, you need specify the name in this field.
 $$

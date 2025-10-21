@@ -18,22 +18,28 @@ export interface FlinkSQLGatewayConnection {
      * Catalogs provide metadata, such as databases, tables, partitions, views, and functions
      * and information needed to access data stored in a database or other external systems.
      */
-    catalog: string;
-    /**
-     * Database of the data source. This is optional parameter, if you would like to restrict
-     * the metadata reading to a single database. When left blank, OpenMetadata Ingestion
-     * attempts to scan all the databases.
-     */
-    database?: string;
+    catalogName:          string;
+    connectionArguments?: { [key: string]: any };
+    connectionOptions?:   { [key: string]: string };
     /**
      * Regex to only include/exclude databases that matches the pattern.
      */
     databaseFilterPattern?: FilterPattern;
     /**
+     * Database of the data source. This is optional parameter, if you would like to restrict
+     * the metadata reading to a single database. When left blank, OpenMetadata Ingestion
+     * attempts to scan all the databases.
+     */
+    databaseName?: string;
+    /**
      * Flink Sql Gateway URI
      */
-    hostPort:                    string;
-    sampleDataStorageConfig?:    SampleDataStorageConfig;
+    hostPort:                 string;
+    sampleDataStorageConfig?: SampleDataStorageConfig;
+    /**
+     * SQLAlchemy driver scheme options.
+     */
+    scheme?:                     FlinkSQLGatewayScheme;
     supportsDBTExtraction?:      boolean;
     supportsLineageExtraction?:  boolean;
     supportsMetadataExtraction?: boolean;
@@ -48,6 +54,12 @@ export interface FlinkSQLGatewayConnection {
      * Service Type
      */
     type?: FlinkSQLGatewayType;
+    /**
+     * Location used to query INFORMATION_SCHEMA.JOBS_BY_PROJECT to fetch usage data. You can
+     * pass multi-regions, such as `us` or `eu`, or you specific region. Australia and Asia
+     * multi-regions are not yet in GA.
+     */
+    usageLocation?: string;
 }
 
 /**
@@ -144,6 +156,13 @@ export interface AwsCredentials {
      * The name of a profile to use with the boto session.
      */
     profileName?: string;
+}
+
+/**
+ * SQLAlchemy driver scheme options.
+ */
+export enum FlinkSQLGatewayScheme {
+    FlinkREST = "flink+rest",
 }
 
 /**
