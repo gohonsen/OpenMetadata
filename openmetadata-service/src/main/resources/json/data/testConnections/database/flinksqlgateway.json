@@ -1,0 +1,26 @@
+{
+  "name": "FlinkSqlGateway",
+  "displayName": "Flink Sql Gateway Test Connection",
+  "description": "This Test Connection validates the access against the database and basic metadata extraction of schemas and tables.",
+  "steps": [
+    {
+      "name": "CheckAccess",
+      "description": "Validate that we can properly connect the flink sql gateway.",
+      "errorMessage": "Failed to connect to flink sql gateway, please validate the host port config",
+      "shortCircuit": true,
+      "mandatory": true
+    },
+    {
+      "name": "CheckCatalog",
+      "description": "List all the catalogs.",
+      "errorMessage": "Failed to get catalogs, please validate the host port config.",
+      "mandatory": true
+    },
+    {
+      "name": "CheckDatabase",
+      "description": "List all the databases of the catalog.",
+      "errorMessage": "Failed to get databases, please validate the catalog config.",
+      "mandatory": true
+    }
+  ]
+}
